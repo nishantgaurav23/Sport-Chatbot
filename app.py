@@ -9,30 +9,53 @@ import re
 import requests
 from dotenv import load_dotenv
 from embedding_processor import SentenceTransformerRetriever, process_data
+import pickle
 
 import os
 import warnings
 import json  # Add this import
-warnings.filterwarnings("ignore", category=UserWarning)
 
-import streamlit as st
-import torch
-import torch.nn.functional as F
-import re
-import requests
-from dotenv import load_dotenv
-from embedding_processor import SentenceTransformerRetriever, process_data
+
 
 # Load environment variables
-#load_dotenv()
+load_dotenv()
+
+# Add the new function here, right after imports and before API configuration
+@st.cache_data
+@st.cache_data
+def load_from_drive(file_id: str):
+    """Load pickle file directly from Google Drive"""
+    try:
+        # Direct download URL for Google Drive
+        url = f"https://drive.google.com/uc?id={file_id}&export=download"
+        
+        # First request to get the confirmation token
+        session = requests.Session()
+        response = session.get(url, stream=True)
+        
+        # Check if we need to confirm download
+        for key, value in response.cookies.items():
+            if key.startswith('download_warning'):
+                # Add confirmation parameter to the URL
+                url = f"{url}&confirm={value}"
+                response = session.get(url, stream=True)
+                break
+        
+        # Load the content and convert to pickle
+        content = response.content
+        print(f"Successfully downloaded {len(content)} bytes")
+        return pickle.loads(content)
+        
+    except Exception as e:
+        print(f"Detailed error: {str(e)}")  # This will help debug
+        st.error(f"Error loading file from Drive: {str(e)}")
+        return None
 
 # Hugging Face API configuration
-# Remove the dotenv import and load_dotenv() call if you're only deploying to Hugging Face
-
-# Hugging Face API configuration
-
+#HUGGINGFACE_API_KEY = "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"
 API_URL = "https://api-inference.huggingface.co/models/mistralai/Mistral-7B-v0.1"
-headers = {"Authorization": "Bearer HUGGINGFACE_API_KEY"}
+headers = {"Authorization": f"Bearer {os.getenv('HUGGINGFACE_API_KEY')}"}
+#headers = {"Authorization": "Bearer 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"}
 
 class RAGPipeline:
 
@@ -197,27 +220,29 @@ def check_environment():
         st.error(f"Missing required package: {str(e)}")
         st.stop()
         return False
-# def check_environment():
-#     """Check if the environment is properly set up"""
-#     try:
-#         # Check for API key
-#         if not get_api_key():
-#             return False
-        
-#         # Check required packages
-#         import torch
-#         import sentence_transformers
-#         return True
-#     except ImportError as e:
-#         st.error(f"Missing required package: {str(e)}")
-#         st.stop()
-#         return False
+
+# @st.cache_resource
+# def initialize_rag_pipeline():
+#     """Initialize the RAG pipeline once"""
+#     data_folder = "ESPN_data"
+#     return RAGPipeline(data_folder)
 
 @st.cache_resource
 def initialize_rag_pipeline():
     """Initialize the RAG pipeline once"""
     data_folder = "ESPN_data"
-    return RAGPipeline(data_folder)
+    drive_file_id = "1MuV63AE9o6zR9aBvdSDQOUextp71r2NN"
+    
+    with st.spinner("Loading embeddings from Google Drive..."):
+        cache_data = load_from_drive(drive_file_id)
+        if cache_data is None:
+            st.error("Failed to load embeddings from Google Drive")
+            st.stop()
+        
+        rag = RAGPipeline(data_folder)
+        rag.documents = cache_data['documents']
+        rag.retriever.store_embeddings(cache_data['embeddings'])
+        return rag
 
 def main():
     # Environment check
