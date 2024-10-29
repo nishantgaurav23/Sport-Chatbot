@@ -1,0 +1,8 @@
+streamlit
+torch
+sentence-transformers
+requests
+pandas
+numpy
+tqdm
+python-dotenv
